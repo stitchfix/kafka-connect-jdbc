@@ -16,6 +16,7 @@
 
 package io.confluent.connect.jdbc.source;
 
+import io.confluent.connect.jdbc.sink.dialect.DbDialect;
 import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
@@ -62,15 +63,24 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
   private long timestampDelay;
   private TimestampIncrementingOffset offset;
 
+  private DbDialect dbDialect;
+  private int batchMaxRows;
+
+  private DbDialect.MaxRowsParameterPosition position;
+
   public TimestampIncrementingTableQuerier(QueryMode mode, String name, String topicPrefix,
                                            String timestampColumn, String incrementingColumn,
                                            Map<String, Object> offsetMap, Long timestampDelay,
-                                           String schemaPattern, boolean mapNumerics) {
+                                           String schemaPattern, boolean mapNumerics,
+                                           DbDialect dbDialect, int batchMaxRows) {
     super(mode, name, topicPrefix, schemaPattern, mapNumerics);
     this.timestampColumn = timestampColumn;
     this.incrementingColumn = incrementingColumn;
     this.timestampDelay = timestampDelay;
     this.offset = TimestampIncrementingOffset.fromMap(offsetMap);
+
+    this.dbDialect = dbDialect;
+    this.batchMaxRows = batchMaxRows;
   }
 
   @Override
@@ -142,12 +152,22 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
       builder.append(" ASC");
     }
     String queryString = builder.toString();
+
+    if (this.dbDialect == null) {
+      this.position = DbDialect.MaxRowsParameterPosition.MISSING;
+    } else {
+      DbDialect.MaxRowsWrappedQuery wrappedQuery = this.dbDialect.wrapMaxRows(queryString);
+      queryString = wrappedQuery.queryString;
+      this.position = wrappedQuery.position;
+    }
+
     log.debug("{} prepared SQL query: {}", this, queryString);
     stmt = db.prepareStatement(queryString);
   }
 
   @Override
   protected ResultSet executeQuery() throws SQLException {
+    int lastParameterIndex;
     if (incrementingColumn != null && timestampColumn != null) {
       Timestamp tsOffset = offset.getTimestampOffset();
       Long incOffset = offset.getIncrementingOffset();
@@ -156,6 +176,7 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
       stmt.setTimestamp(2, tsOffset, DateTimeUtils.UTC_CALENDAR.get());
       stmt.setLong(3, incOffset);
       stmt.setTimestamp(4, tsOffset, DateTimeUtils.UTC_CALENDAR.get());
+      lastParameterIndex = 4;
       log.debug("Executing prepared statement with start time value = {} end time = {} and incrementing value = {}",
                 DateTimeUtils.formatUtcTimestamp(tsOffset),
                 DateTimeUtils.formatUtcTimestamp(endTime),
@@ -163,16 +184,33 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
     } else if (incrementingColumn != null) {
       Long incOffset = offset.getIncrementingOffset();
       stmt.setLong(1, incOffset);
+      lastParameterIndex = 1;
       log.debug("Executing prepared statement with incrementing value = {}", incOffset);
     } else if (timestampColumn != null) {
       Timestamp tsOffset = offset.getTimestampOffset();
       Timestamp endTime = new Timestamp(JdbcUtils.getCurrentTimeOnDB(stmt.getConnection(), DateTimeUtils.UTC_CALENDAR.get()).getTime() - timestampDelay);
       stmt.setTimestamp(1, tsOffset, DateTimeUtils.UTC_CALENDAR.get());
       stmt.setTimestamp(2, endTime, DateTimeUtils.UTC_CALENDAR.get());
+      lastParameterIndex = 2;
       log.debug("Executing prepared statement with timestamp value = {} end time = {}",
                 DateTimeUtils.formatUtcTimestamp(tsOffset),
                 DateTimeUtils.formatUtcTimestamp(endTime));
+    } else {
+      throw new ConnectException("Neither incrementing nor timestamp column specified");
     }
+
+    switch (this.position) {
+      case MISSING:
+        // Do nothing
+        break;
+      case RIGHT:
+        stmt.setLong(lastParameterIndex + 1, this.batchMaxRows);
+        break;
+      default:
+        throw new ConnectException("Unexpected max rows parameter position: " + this.position);
+
+    }
+
     return stmt.executeQuery();
   }
 

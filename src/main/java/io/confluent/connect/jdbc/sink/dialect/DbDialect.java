@@ -41,12 +41,30 @@ import static io.confluent.connect.jdbc.sink.dialect.StringBuilderUtil.nCopiesTo
 
 public abstract class DbDialect {
 
+  public enum MaxRowsParameterPosition {
+    MISSING, RIGHT
+  }
+
+  public static class MaxRowsWrappedQuery {
+    public final String queryString;
+    public final MaxRowsParameterPosition position;
+
+    public MaxRowsWrappedQuery(String queryString, MaxRowsParameterPosition position) {
+      this.queryString = queryString;
+      this.position = position;
+    }
+  }
+
   private final String escapeStart;
   private final String escapeEnd;
 
   DbDialect(String escapeStart, String escapeEnd) {
     this.escapeStart = escapeStart;
     this.escapeEnd = escapeEnd;
+  }
+
+  public MaxRowsWrappedQuery wrapMaxRows(String queryString) {
+    return new MaxRowsWrappedQuery(queryString, MaxRowsParameterPosition.MISSING);
   }
 
   public final String getInsert(final String tableName, final Collection<String> keyColumns, final Collection<String> nonKeyColumns) {
@@ -255,6 +273,10 @@ public abstract class DbDialect {
 
     if (url.startsWith("jdbc:vertica")) {
       return new VerticaDialect();
+    }
+
+    if (url.startsWith("jdbc:derby")) {
+      return new GenericDialect();
     }
 
     final String protocol = extractProtocolFromUrl(url).toLowerCase();

@@ -35,6 +35,14 @@ public class PostgreSqlDialect extends DbDialect {
   }
 
   @Override
+  public final MaxRowsWrappedQuery wrapMaxRows(String queryString) {
+    final StringBuilder builder = new StringBuilder();
+    builder.append(queryString);
+    builder.append(" LIMIT ?");
+    return new MaxRowsWrappedQuery(builder.toString(), MaxRowsParameterPosition.RIGHT);
+  }
+
+  @Override
   protected String getSqlType(String schemaName, Map<String, String> parameters, Schema.Type type) {
     if (schemaName != null) {
       switch (schemaName) {
