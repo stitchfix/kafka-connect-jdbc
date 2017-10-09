@@ -341,7 +341,17 @@ public class DataConverter {
          * TODO: Postgres handles this differently, returning a string "t" or "f". See the
          * elasticsearch-jdbc plugin for an example of how this is handled
          */
-        colValue = resultSet.getByte(col);
+
+        Object colValueTemp;
+        try {
+          colValueTemp = resultSet.getByte(col);
+        } catch (Throwable e) {
+
+          // This is needed for the Postgres driver which encodes boolean values as a BIT type
+          colValueTemp = (byte) (resultSet.getBoolean(col) ? 1 : 0);
+        }
+        colValue = colValueTemp;
+
         break;
       }
 
