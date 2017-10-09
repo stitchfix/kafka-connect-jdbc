@@ -298,9 +298,17 @@ public class DataConverter {
         break;
       }
 
+      // Any custom database type we are going to fetch as a string
+      case Types.OTHER:
+        if (optional) {
+          builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
+        } else {
+          builder.field(fieldName, Schema.STRING_SCHEMA);
+        }
+        break;
+
       case Types.ARRAY:
       case Types.JAVA_OBJECT:
-      case Types.OTHER:
       case Types.DISTINCT:
       case Types.STRUCT:
       case Types.REF:
@@ -496,9 +504,12 @@ public class DataConverter {
         break;
       }
 
+      case Types.OTHER:
+        colValue = resultSet.getString(col);
+        break;
+
       case Types.ARRAY:
       case Types.JAVA_OBJECT:
-      case Types.OTHER:
       case Types.DISTINCT:
       case Types.STRUCT:
       case Types.REF:
