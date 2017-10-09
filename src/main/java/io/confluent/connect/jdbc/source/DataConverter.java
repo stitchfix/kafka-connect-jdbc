@@ -298,9 +298,17 @@ public class DataConverter {
         break;
       }
 
+      // Any custom database type we are going to fetch as a string
+      case Types.OTHER:
+        if (optional) {
+          builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
+        } else {
+          builder.field(fieldName, Schema.STRING_SCHEMA);
+        }
+        break;
+
       case Types.ARRAY:
       case Types.JAVA_OBJECT:
-      case Types.OTHER:
       case Types.DISTINCT:
       case Types.STRUCT:
       case Types.REF:
@@ -333,7 +341,17 @@ public class DataConverter {
          * TODO: Postgres handles this differently, returning a string "t" or "f". See the
          * elasticsearch-jdbc plugin for an example of how this is handled
          */
-        colValue = resultSet.getByte(col);
+
+        Object colValueTemp;
+        try {
+          colValueTemp = resultSet.getByte(col);
+        } catch (Throwable e) {
+
+          // This is needed for the Postgres driver which encodes boolean values as a BIT type
+          colValueTemp = (byte) (resultSet.getBoolean(col) ? 1 : 0);
+        }
+        colValue = colValueTemp;
+
         break;
       }
 
@@ -496,9 +514,12 @@ public class DataConverter {
         break;
       }
 
+      case Types.OTHER:
+        colValue = resultSet.getString(col);
+        break;
+
       case Types.ARRAY:
       case Types.JAVA_OBJECT:
-      case Types.OTHER:
       case Types.DISTINCT:
       case Types.STRUCT:
       case Types.REF:
